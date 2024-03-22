@@ -16,7 +16,7 @@ LiquidCrystal_I2C lcd(0x27,20,4);
 
 #define servo A1
 
-int Set=15;
+int Set=20;
 int distance_L, distance_F, distance_R; 
 
 void setup()
@@ -36,8 +36,7 @@ pinMode(in3, OUTPUT);
 pinMode(in4, OUTPUT); 
 pinMode(enB, OUTPUT); 
 pinMode(servo, OUTPUT);
-analogWrite(enA, 60);
-analogWrite(enB, 60); 
+
  lcd.setCursor(3,0);
  lcd.print("Line Follower");
  lcd.setCursor(0,1);
@@ -53,6 +52,8 @@ analogWrite(enB, 60);
  for (int angle = 0; angle <= 70; angle += 5) {servoPulse(servo, angle); }
  distance_F = Ultrasonic_read();
  delay(500);
+ analogWrite(enA, 85);//Adjust this between 60 to 80 for effective tracking
+analogWrite(enB, 85); //Adjust this between 60 to 80 for effective tracking
 }
 
 void loop()
@@ -81,18 +82,41 @@ long Ultrasonic_read(){
   long time = pulseIn (echo, HIGH);return time / 29 / 2;
 }
 
-void compareDistance()
-{
-  if(distance_L > distance_R){
-  turnLeft();delay(200);
-  forword();delay(700);
-  turnRight();delay(500);
+void compareDistance() {
+  Stop();delay(100);
+  if (distance_R > distance_L) {
+    turnLeft();
+  delay(500);
+  forword();
+  delay(600);
+  turnRight();
+  delay(500);
+  forword();
+  delay(600);
+  turnRight();
+  delay(400);
+  } else {
+    turnRight();
+  delay(500);
+  forword();
+  delay(600);
+  turnLeft();
+  delay(500);
+  forword();
+  delay(600);  
+  turnLeft();
+  delay(400);
   }
-  else{
-  turnRight();delay(300);
-  forword();  delay(700);
-  turnLeft(); delay(500);
-  }
+  lineTrack(); // Attempt to continue line tracking after obstacle avoidance
+}
+
+void lineTrack() {
+  int leftSensor = digitalRead(L_S);
+  int rightSensor = digitalRead(R_S);
+
+  if ((leftSensor == HIGH && rightSensor == HIGH) || (leftSensor == LOW && rightSensor == LOW)) {forword();}
+  else if (rightSensor == HIGH) {turnLeft();} 
+  else if (leftSensor == HIGH) {turnRight();}
 }
 
 void Check_side()
@@ -116,6 +140,7 @@ digitalWrite(in1, LOW); //Left Motor backword Pin
 digitalWrite(in2, HIGH); //Left Motor forword Pin 
 digitalWrite(in3, HIGH); //Right Motor forword Pin 
 digitalWrite(in4, LOW); //Right Motor backword Pin 
+
 }
 
 void turnLeft(){ //turn
@@ -123,6 +148,7 @@ digitalWrite(in1, LOW); //Left Motor backword Pin
 digitalWrite(in2, HIGH); //Left Motor forword Pin 
 digitalWrite(in3, LOW); //Right Motor forword Pin 
 digitalWrite(in4, HIGH); //Right Motor backword Pin 
+
 }
 
 void turnRight(){ //turn
@@ -130,6 +156,7 @@ digitalWrite(in1, HIGH); //Left Motor backword Pin
 digitalWrite(in2, LOW); //Left Motor forword Pin 
 digitalWrite(in3, HIGH); //Right Motor forword Pin 
 digitalWrite(in4, LOW); //Right Motor backword Pin 
+
 }
 
 void Stop(){ //
@@ -137,4 +164,5 @@ digitalWrite(in1, LOW); //Left Motor backword Pin
 digitalWrite(in2, LOW); //Left Motor forword Pin 
 digitalWrite(in3, LOW); //Right Motor forword Pin 
 digitalWrite(in4, LOW); //Right Motor backword Pin 
+
 }
