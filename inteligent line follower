@@ -1,0 +1,303 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+LiquidCrystal_I2C lcd(0x27, 20, 4);
+
+#define enA 3       // Enable1 L298 Pin enA
+#define in1 4       // Motor1  L298 Pin in1 connected alternatively to the motor driver 1 in 3 2 in 4
+#define in2 2       // Motor1  L298 Pin in1
+#define in3 6       // Motor2  L298 Pin in1
+#define in4 7       // Motor2  L298 Pin in1
+#define enB 5       // Enable2 L298 Pin enB
+
+#define L_S 10      // IR sensor input Left
+#define R_S 11      // IR sensor input Right
+
+// Ultrasonic sensor trigger
+#define echo 8      // Echo pin
+#define trigger 9   // Trigger pin
+
+// Servo motor control
+#define servo A1
+
+// Threshold value for obstacle detection
+int Set = 15; // Lower value for increased sensitivity
+
+// Distances measured by sensors
+int distance_L, distance_F, distance_R;
+
+// Base speed of the rover
+int baseSpeed = 150;
+
+// Exploration mode flag
+bool explorationMode = false;
+
+// Function prototypes with speed parameter
+void forward(int speed);
+void turnRight(int speed);
+void turnLeft(int speed);
+void lineTrack(int speed);
+void Stop();
+void explore();
+
+void servoPulse(int pin, int angle) {
+    int pwm = (angle * 11) + 500;
+    digitalWrite(pin, HIGH);
+    delayMicroseconds(pwm);
+    digitalWrite(pin, LOW);
+    delay(50);
+}
+
+long Ultrasonic_read() {
+    digitalWrite(trigger, LOW);
+    delayMicroseconds(2);
+    digitalWrite(trigger, HIGH);
+    delayMicroseconds(10);
+    long time = pulseIn(echo, HIGH);
+    return time / 29 / 2;
+}
+
+void setup() {
+    lcd.init();
+    lcd.init();
+    lcd.backlight();
+    Serial.begin(9600);
+    pinMode(R_S, INPUT);
+    pinMode(L_S, INPUT);
+    pinMode(echo, INPUT);
+    pinMode(trigger, OUTPUT);
+    pinMode(enA, OUTPUT);
+    pinMode(in1, OUTPUT);
+    pinMode(in2, OUTPUT);
+    pinMode(in3, OUTPUT);
+    pinMode(in4, OUTPUT);
+    pinMode(enB, OUTPUT);
+    pinMode(servo, OUTPUT);
+
+    lcd.setCursor(3, 0);
+    lcd.print("Line Follower");
+    lcd.setCursor(0, 1);
+    lcd.print("Obstacle Avoiding");
+    lcd.setCursor(0, 2);
+    delay(500);
+    lcd.clear();
+    lcd.print("Exploration Rover");
+    lcd.setCursor(2, 3);
+    lcd.print("Exploring");
+
+    // Move the servo to scan the surroundings
+    for (int angle = 70; angle <= 140; angle += 5) {
+        servoPulse(servo, angle);
+    }
+    for (int angle = 140; angle >= 0; angle -= 5) {
+        servoPulse(servo, angle);
+    }
+    for (int angle = 0; angle <= 70; angle += 5) {
+        servoPulse(servo, angle);
+    }
+
+    // Read initial ultrasonic sensor value
+    distance_F = Ultrasonic_read();
+    delay(500);
+    analogWrite(enA, 85);
+    analogWrite(enB, 85);
+}
+
+void loop() {
+    // Read sensor data
+    distance_F = Ultrasonic_read();
+
+    // Check if exploration mode is active
+    if (explorationMode) {
+        explore(); // Execute exploration behavior
+    } else {
+        // Check if both sensors detect the line
+        if (digitalRead(R_S) == 0 && digitalRead(L_S) == 0) {
+            // Path is clear, continue forward
+            if (distance_F > Set) {
+                forward(baseSpeed);
+                lcd.clear();
+                lcd.setCursor(0, 0);
+                lcd.print("Path Clear");
+            }
+            // Obstacle detected, perform obstacle avoidance
+            else {
+                obstacleAvoidance();
+            }
+        }
+        // Adjust movement based on sensor readings
+        else {
+            if (digitalRead(R_S) == 1 && digitalRead(L_S) == 0) {
+                turnRight(baseSpeed);
+                lcd.clear();
+                lcd.setCursor(0, 0);
+                lcd.print("Turning right");
+            } else if (digitalRead(R_S) == 0 && digitalRead(L_S) == 1) {
+                turnLeft(baseSpeed);
+                lcd.clear();
+                lcd.setCursor(0, 0);
+                lcd.print("Turning left");
+            } else if (digitalRead(R_S) == 1 && digitalRead(L_S) == 1) {
+                Stop();
+                lcd.clear();
+                lcd.setCursor(0, 0);
+                lcd.print("No track");
+                // Attempt to recover line position
+                lineTrack(baseSpeed);
+            }
+        }
+    }
+
+    delay(10); // Add for stability
+}
+
+
+void lineTrack(int speed) {
+    // Read sensor data
+    int leftSensor = digitalRead(L_S);
+    int rightSensor = digitalRead(R_S);
+
+    // Adjust movement based on sensor readings
+    if (leftSensor == 1 && rightSensor == 1) {
+        // Both sensors are off the line, attempt to recover the line position
+        int difference = distance_L - distance_R; // Calculate the difference in sensor readings
+        if (difference > 0) {
+            // If the difference is positive, turn left
+            turnLeft(baseSpeed);
+            lcd.clear();
+            lcd.setCursor(0, 0);
+            lcd.print("Recovering left");
+            // Move the servo to emphasize left turn
+            servoPulse(servo, 70);
+        } else {
+            // If the difference is negative or zero, turn right
+            turnRight(baseSpeed);
+            lcd.clear();
+            lcd.setCursor(0, 0);
+            lcd.print("Recovering right");
+            // Move the servo to emphasize right turn
+            servoPulse(servo, 110);
+        }
+    } else {
+        // The rover is already on the line, continue tracking
+        forward(baseSpeed);
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Tracking line");
+        // Move the servo to emphasize forward movement
+        servoPulse(servo, 90);
+    }
+}
+
+void obstacleAvoidance() {
+    // Stop the robot before making any movements
+    Stop();
+    delay(100);
+
+    // Rotate the servo to scan the surroundings
+    for (int angle = 70; angle <= 140; angle += 5) {
+        servoPulse(servo, angle);
+    }
+    delay(300);
+    distance_R = Ultrasonic_read();
+    Serial.print("D R=");
+    Serial.println(distance_R);
+    delay(100);
+
+    // Rotate the servo back to the center position
+    for (int angle = 140; angle >= 0; angle -= 5) {
+        servoPulse(servo, angle);
+    }
+    delay(500);
+    distance_L = Ultrasonic_read();
+    Serial.print("D L=");
+    Serial.println(distance_L);
+    delay(100);
+
+    // Update LCD with obstacle detection information
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Obstacle Detected");
+    lcd.setCursor(0, 1);
+    lcd.print("Left Dist: ");
+    lcd.print(distance_L);
+    lcd.setCursor(0, 2);
+    lcd.print("Right Dist: ");
+    lcd.print(distance_R);
+
+    // Check if there's enough space on either side to avoid the obstacle
+    if (distance_R > distance_L) {
+        // If more space on the right side, turn left to avoid the obstacle
+        turnLeft(baseSpeed);
+    } else {
+        // If more space on the left side (or equal), turn right to avoid the obstacle
+        turnRight(baseSpeed);
+    }
+
+    // Move forward for a short distance to navigate around the obstacle
+    forward(baseSpeed);
+    delay(600);
+
+    // Stop the robot to adjust its direction
+    Stop();
+    delay(100);
+
+    // Adjust the direction based on the previous turn to avoid colliding with the obstacle
+    if (distance_R > distance_L) {
+        // If previously turned left, turn right now
+        turnRight(baseSpeed);
+    } else {
+        // If previously turned right, turn left now
+        turnLeft(baseSpeed);
+    }
+
+    // Continue moving forward after adjusting direction
+    forward(baseSpeed);
+    delay(600);
+
+    // Turn back to the original direction
+    if (distance_R > distance_L) {
+        // Turn back right if previously turned left
+        turnRight(baseSpeed);
+    } else {
+        // Turn back left if previously turned right
+        turnLeft(baseSpeed);
+    }
+
+    // Wait for a short duration before resuming line tracking
+    delay(400);
+
+    // Attempt to continue line tracking after obstacle avoidance
+    lineTrack(baseSpeed);
+}
+
+
+
+void forward(int speed) {  
+    digitalWrite(in1, LOW);  // Left Motor backward Pin 
+    digitalWrite(in2, HIGH); // Left Motor forward Pin 
+    digitalWrite(in3, HIGH); // Right Motor forward Pin 
+    digitalWrite(in4, LOW);  // Right Motor backward Pin 
+}
+
+void turnLeft(int speed) {
+    digitalWrite(in1, LOW);  // Left Motor backward Pin 
+    digitalWrite(in2, HIGH); // Left Motor forward Pin 
+    digitalWrite(in3, LOW);  // Right Motor forward Pin 
+    digitalWrite(in4, HIGH); // Right Motor backward Pin 
+}
+
+void turnRight(int speed) {
+    digitalWrite(in1, LOW);   // Left Motor backward Pin 
+    digitalWrite(in2, HIGH);  // Left Motor forward Pin 
+    digitalWrite(in3, HIGH);  // Right Motor forward Pin 
+    digitalWrite(in4, LOW);   // Right Motor backward Pin 
+}
+
+
+void Stop() {
+    digitalWrite(in1, LOW); // Left Motor backward Pin 
+    digitalWrite(in2, LOW); // Left Motor forward Pin 
+    digitalWrite(in3, LOW); // Right Motor forward Pin 
+    digitalWrite(in4, LOW); // Right Motor
+}
